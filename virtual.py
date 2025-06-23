@@ -1,87 +1,104 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 import io
 
-st.title("⚡ Virtual Alarm Node Matcher")
+st.set_page_config(page_title="Alarm Matcher", layout="wide")
 
-# Upload files
-virtual_file = st.file_uploader("Upload Virtual Alarm File (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"])
-all_file = st.file_uploader("Upload All Alarm File (.xlsx, .xls, .csv)", type=["xlsx", "xls", "csv"])
+st.title("Alarm Matching Tool")
+st.write("Upload your Virtual Alarms and All Alarms files to find matching nodes")
 
-# Required columns
-required_cols = ["Rms Station", "Site Alias", "Zone", "Node", "Cluster", "Tenant", "Start Time", "End Time"]
+# File upload section
+col1, col2 = st.columns(2)
 
-# Read function
-def read_file(file):
-    if file.name.endswith((".xlsx", ".xls")):
-        return pd.read_excel(file)
-    elif file.name.endswith(".csv"):
-        return pd.read_csv(file)
-    return None
+with col1:
+    st.subheader("Virtual Alarms File")
+    virtual_file = st.file_uploader("Upload Virtual Alarms Excel file", type=["xlsx", "xls"], key="virtual")
 
-# Validate required columns
-def validate_columns(df, name):
-    missing = [col for col in required_cols if col not in df.columns]
-    if missing:
-        st.error(f"{name} file is missing columns: {', '.join(missing)}")
-        return False
-    return True
+with col2:
+    st.subheader("All Alarms File")
+    all_file = st.file_uploader("Upload All Alarms Excel file", type=["xlsx", "xls"], key="all")
 
-# Main matching logic
-if virtual_file and all_file:
-    df_virtual = read_file(virtual_file)
-    df_all = read_file(all_file)
+def process_alarms(virtual_df, all_df):
+    # Convert time columns to datetime if they're not already
+    time_columns = ['Start Time', 'End Time']
+    for df in [virtual_df, all_df]:
+        for col in time_columns:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col])
 
-    if df_virtual is not None and df_all is not None:
-        # Validate columns
-        if not validate_columns(df_virtual, "Virtual Alarm") or not validate_columns(df_all, "All Alarm"):
-            st.stop()
+    # Create a new column for matched nodes
+    virtual_df['Matched Nodes'] = ''
 
-        try:
-            # Ensure datetime
-            df_virtual["Start Time"] = pd.to_datetime(df_virtual["Start Time"])
-            df_virtual["End Time"] = pd.to_datetime(df_virtual["End Time"])
-            df_all["Start Time"] = pd.to_datetime(df_all["Start Time"])
-        except Exception as e:
-            st.error(f"Date conversion failed: {e}")
-            st.stop()
+    # Process each virtual alarm
+    for idx, v_row in virtual_df.iterrows():
+        site_alias = v_row['Site Alias']
+        v_start = v_row['Start Time']
+        v_end = v_row['End Time']
 
-        # Create unique keys for grouping
-        df_virtual["match_key"] = (
-            df_virtual["Site Alias"].astype(str) + "|" +
-            df_virtual["Start Time"].astype(str) + "|" +
-            df_virtual["End Time"].astype(str)
-        )
-
-        # Merge and filter
-        merged = df_virtual.merge(df_all, on="Site Alias", suffixes=('_v', '_a'))
-        matched = merged[
-            (merged["Start Time_a"] >= merged["Start Time_v"]) &
-            (merged["Start Time_a"] <= merged["End Time_v"])
+        # Find matching alarms in all alarms file
+        matches = all_df[
+            (all_df['Site Alias'] == site_alias) &
+            (all_df['Start Time'] >= v_start) &
+            (all_df['Start Time'] <= v_end)
         ]
 
-        # Group matched nodes
-        matched["group_key"] = (
-            matched["Site Alias"] + "|" +
-            matched["Start Time_v"].astype(str) + "|" +
-            matched["End Time_v"].astype(str)
-        )
-        node_map = matched.groupby("group_key")["Node_a"].apply(lambda x: ", ".join(x.dropna().unique()))
+        # Get unique node names and join them
+        matched_nodes = matches['Node'].dropna().unique()
+        virtual_df.at[idx, 'Matched Nodes'] = ', '.join(matched_nodes)
 
-        # Add matched nodes to virtual dataframe
-        df_virtual["Matched Nodes from All Alarm"] = df_virtual["match_key"].map(node_map).fillna("")
-        df_virtual.drop(columns=["match_key"], inplace=True)
+    return virtual_df
 
-        # Download as Excel
-        output = io.BytesIO()
-        df_virtual.to_excel(output, index=False, engine="openpyxl")
-        st.download_button(
-            label="📥 Download Matched Excel",
-            data=output.getvalue(),
-            file_name="matched_virtual_alarm.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        st.error("Failed to read one or both files.")
+if virtual_file and all_file:
+    try:
+        # Read the uploaded files
+        virtual_df = pd.read_excel(virtual_file)
+        all_df = pd.read_excel(all_file)
+
+        # Check if required columns exist
+        required_columns = ['Site Alias', 'Start Time', 'End Time', 'Node']
+        for col in required_columns:
+            if col not in virtual_df.columns or col not in all_df.columns:
+                st.error(f"Both files must contain '{col}' column")
+                st.stop()
+
+        # Show preview of uploaded files
+        st.subheader("File Previews")
+        tab1, tab2 = st.tabs(["Virtual Alarms Preview", "All Alarms Preview"])
+        
+        with tab1:
+            st.write("First 5 rows of Virtual Alarms:")
+            st.dataframe(virtual_df.head())
+        
+        with tab2:
+            st.write("First 5 rows of All Alarms:")
+            st.dataframe(all_df.head())
+
+        # Process files when button is clicked
+        if st.button("Process Alarms", type="primary"):
+            with st.spinner("Processing alarms..."):
+                result_df = process_alarms(virtual_df.copy(), all_df.copy())
+            
+            st.success("Processing complete!")
+            
+            # Show results
+            st.subheader("Results")
+            st.dataframe(result_df)
+            
+            # Download button
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                result_df.to_excel(writer, index=False)
+            output.seek(0)
+            
+            st.download_button(
+                label="Download Results",
+                data=output,
+                file_name="Virtual_Alarms_With_Matches.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
 else:
-    st.info("📂 Please upload both files to continue.")
+    st.info("Please upload both files to proceed")
