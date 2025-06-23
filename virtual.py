@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
+import io
 
-st.title("📁 Step 1: Upload Alarm Files")
+st.title("📁 Step 1: Upload Alarm Files (Excel or CSV)")
 
-# Upload Virtual Alarm file
-virtual_file = st.file_uploader("Upload Virtual Alarm Excel", type=["xlsx", "xls"], key="virtual")
-
-# Upload All Alarm file
-all_file = st.file_uploader("Upload All Alarm Excel", type=["xlsx", "xls"], key="all")
+# File uploader
+virtual_file = st.file_uploader("Upload Virtual Alarm File", type=["xlsx", "xls", "csv"], key="virtual")
+all_file = st.file_uploader("Upload All Alarm File", type=["xlsx", "xls", "csv"], key="all")
 
 # Required columns
 required_columns = [
@@ -15,6 +14,21 @@ required_columns = [
     "Cluster", "Tenant", "Start Time", "End Time"
 ]
 
+# File reading function
+def read_alarm_file(uploaded_file):
+    try:
+        if uploaded_file.name.endswith((".xlsx", ".xls")):
+            return pd.read_excel(uploaded_file)
+        elif uploaded_file.name.endswith(".csv"):
+            return pd.read_csv(uploaded_file)
+        else:
+            st.warning("Unsupported file type. Please upload .xlsx, .xls, or .csv")
+            return None
+    except Exception as e:
+        st.error(f"Error reading file {uploaded_file.name}: {e}")
+        return None
+
+# Column validator
 def validate_columns(df, file_name):
     missing = [col for col in required_columns if col not in df.columns]
     if missing:
@@ -22,11 +36,12 @@ def validate_columns(df, file_name):
         return False
     return True
 
+# Load and validate files
 if virtual_file and all_file:
-    try:
-        df_virtual = pd.read_excel(virtual_file)
-        df_all = pd.read_excel(all_file)
+    df_virtual = read_alarm_file(virtual_file)
+    df_all = read_alarm_file(all_file)
 
+    if df_virtual is not None and df_all is not None:
         # Show file previews
         with st.expander("🔍 Preview: Virtual Alarm"):
             st.dataframe(df_virtual)
@@ -39,8 +54,5 @@ if virtual_file and all_file:
             st.success("✅ Both files uploaded and verified successfully.")
         else:
             st.stop()
-
-    except Exception as e:
-        st.error(f"⚠️ Error loading files: {e}")
 else:
-    st.info("⬆ Please upload both Excel files to proceed.")
+    st.info("⬆ Please upload both files (Excel or CSV) to continue.")
