@@ -7,8 +7,8 @@ st.set_page_config(page_title="Alarm Matcher", layout="wide")
 st.title("Alarm Matching Tool")
 
 # File upload section
-virtual_file = st.file_uploader("Upload Virtual Alarms Excel", type=["xlsx", "xls"])
-all_file = st.file_uploader("Upload All Alarms Excel", type=["xlsx", "xls"])
+virtual_file = st.file_uploader("Upload Virtual Alarms", type=["xlsx", "xls"])
+all_file = st.file_uploader("Upload All Alarms", type=["xlsx", "xls"])
 
 def process_alarms(virtual_df, all_df):
     virtual_df['Matched Nodes'] = ''
