@@ -96,4 +96,4 @@ with st.expander("ℹ️ How It Works"):
     - Matches `Site Alias` where `Start Time` of All Alarms falls between Virtual Alarm window.
     - Each batch processes 100 rows.
     - You can download partial results after each batch.
-    """)
+    """) 
