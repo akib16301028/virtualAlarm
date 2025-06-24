@@ -1,62 +1,100 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-import io
+from io import BytesIO
 
-st.set_page_config(page_title="Alarm Matcher", layout="wide")
-st.title("Alarm Matching Tool")
+# App setup
+st.set_page_config(page_title="Alarm Matcher", layout="centered")
+st.title("🔔 Alarm Matching Tool")
 
 # File upload section
-virtual_file = st.file_uploader("Upload Virtual Alarms", type=["xlsx", "xls"])
-all_file = st.file_uploader("Upload All Alarms", type=["xlsx", "xls"])
+with st.expander("📁 UPLOAD FILES", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        virtual_file = st.file_uploader("Virtual Alarms", type=["xlsx", "xls"], key="virtual")
+    with col2:
+        all_file = st.file_uploader("All Alarms", type=["xlsx", "xls"], key="all")
 
-def process_alarms(virtual_df, all_df):
-    virtual_df['Matched Nodes'] = ''
+# Matching function
+def match_alarms(virtual_df, all_df):
     results = []
+    virtual_df['Matched Nodes'] = ""
     
-    for idx, v_row in virtual_df.iterrows():
-        matches = all_df[
-            (all_df['Site Alias'] == v_row['Site Alias']) &
-            (all_df['Start Time'] >= v_row['Start Time']) &
-            (all_df['Start Time'] <= v_row['End Time'])
-        ]
+    for idx, row in virtual_df.iterrows():
+        mask = (
+            (all_df['Site Alias'] == row['Site Alias']) &
+            (all_df['Start Time'] >= row['Start Time']) &
+            (all_df['Start Time'] <= row['End Time'])
+        )
+        matches = all_df.loc[mask, 'Node'].unique()
+        virtual_df.at[idx, 'Matched Nodes'] = ', '.join(matches)
         
-        matched_nodes = ', '.join(matches['Node'].dropna().unique())
-        virtual_df.at[idx, 'Matched Nodes'] = matched_nodes
-        
-        # Display each row result immediately
-        result_str = f"• Site {v_row['Site Alias']} ({v_row['Start Time']} to {v_row['End Time']}): {matched_nodes or 'No matches'}"
+        # Build progress output
+        result_str = (
+            f"**Site:** {row['Site Alias']} | "
+            f"**Window:** {row['Start Time']} to {row['End Time']} | "
+            f"**Matches:** {len(matches)} nodes"
+        )
         results.append(result_str)
-        st.write(result_str)
     
     return virtual_df, results
 
+# Main processing
 if virtual_file and all_file:
-    if st.button("Process Alarms", type="primary"):
-        virtual_df = pd.read_excel(virtual_file)
-        all_df = pd.read_excel(all_file)
-        
-        # Convert time columns
-        for df in [virtual_df, all_df]:
-            df['Start Time'] = pd.to_datetime(df['Start Time'])
-            df['End Time'] = pd.to_datetime(df['End Time'])
-        
-        # Process and show row-by-row output
-        st.subheader("Processing Results:")
-        result_df, _ = process_alarms(virtual_df, all_df)
-        
-        # Show completion message and download
-        st.success("✅ All rows processed!")
-        
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            result_df.to_excel(writer, index=False)
-        
-        st.download_button(
-            label="Download Full Results",
-            data=output.getvalue(),
-            file_name="Matched_Alarms.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    if st.button("🚀 Find Matches", type="primary"):
+        with st.spinner("Matching alarms..."):
+            try:
+                # Read files with datetime conversion
+                virtual_df = pd.read_excel(virtual_file)
+                all_df = pd.read_excel(all_file)
+                
+                # Convert time columns
+                time_cols = ['Start Time', 'End Time']
+                for df in [virtual_df, all_df]:
+                    for col in time_cols:
+                        if col in df.columns:
+                            df[col] = pd.to_datetime(df[col])
+                
+                # Process data
+                result_df, log_entries = match_alarms(virtual_df, all_df)
+                
+                # Show results
+                st.success("✅ Matching complete!")
+                
+                with st.expander("📊 Results Preview", expanded=True):
+                    st.dataframe(result_df.head())
+                
+                # Download button
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    result_df.to_excel(writer, index=False)
+                
+                st.download_button(
+                    label="📥 Download Full Results",
+                    data=output.getvalue(),
+                    file_name="Matched_Alarms.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+                
+                # Show processing log
+                with st.expander("📝 Matching Log"):
+                    for entry in log_entries:
+                        st.markdown(f"- {entry}")
+            
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
 else:
-    st.info("Please upload both files to begin")
+    st.info("ℹ️ Please upload both files to begin")
+
+# Instructions
+with st.expander("ℹ️ HOW IT WORKS"):
+    st.markdown("""
+    **Matching Logic:**
+    1. For each Virtual Alarm, finds All Alarms where:
+       - `Site Alias` matches exactly
+       - `Start Time` falls between the Virtual Alarm's time window
+    2. Collects all matching Node names
+    3. Outputs comma-separated matches
+    
+    **Required Columns:**
+    - Both files need: `Site Alias`, `Node`, `Start Time`, `End Time`
+    """)
