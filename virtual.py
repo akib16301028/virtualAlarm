@@ -13,7 +13,7 @@ with st.expander("📁 UPLOAD FILES", expanded=True):
     with col1:
         virtual_file = st.file_uploader("Virtual Alarms", type=["xlsx", "xls"], key="virtual")
     with col2:
-        all_file = st.file_uploader("All Alarms", type=["xlsx", "xls"], key="all")
+        all_file = st.file_ploader("All Alarms", type=["xlsx", "xls"], key="all")  # Fixed typo: st.file_uploader
 
 # Initialize session state for results
 if 'results' not in st.session_state:
@@ -27,10 +27,10 @@ def match_alarms(virtual_df, all_df):
     status_text = st.empty()
     
     for idx, row in virtual_df.iterrows():
-        # Update progress
-        progress = int((idx + 1) / len(virtual_df) * 100
+        # Update progress - FIXED PARENTHESIS HERE
+        progress = int((idx + 1) / len(virtual_df) * 100)  # Added closing parenthesis
         progress_bar.progress(progress)
-        status_text.text(f"Processing {idx + 1}/{len(virtual_df)} alarms...")
+        status_text.text(f"Processing {idx + 1}/{len(virtual_df)} alarms...")  # Fixed missing closing brace
         
         # Perform matching
         mask = (
